@@ -354,6 +354,152 @@ void test_successor_cache_specialization() {
                   "Wrong number of messages is passed via continue_node");
 }
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+void test_try_put_and_wait_default() {
+    tbb::task_arena arena(1);
+
+    arena.execute([&]{
+        tbb::flow::graph g;
+
+        std::vector<int> start_work_items;
+        std::vector<int> processed_items;
+        std::vector<int> new_work_items;
+
+        int wait_message = 10;
+
+        for (int i = 0; i < wait_message; ++i) {
+            start_work_items.emplace_back(i);
+            if (i != 0) {
+                new_work_items.emplace_back(i + 10);
+            }
+        }
+
+        tbb::flow::continue_node<int>* start_node = nullptr;
+
+        tbb::flow::continue_node<int> cont(g,
+            [&](tbb::flow::continue_msg) noexcept {
+                static int counter = 0;
+                int i = counter++;
+                if (i == wait_message) {
+                    for (int item : new_work_items) {
+                        (void)item;
+                        start_node->try_put(tbb::flow::continue_msg{});
+                    }
+                }
+                return i;
+            });
+
+        start_node = &cont;
+
+        tbb::flow::function_node<int, int, tbb::flow::lightweight> writer(g, tbb::flow::unlimited,
+            [&](int input) noexcept {
+                processed_items.emplace_back(input);
+                return 0;
+            });
+
+        tbb::flow::make_edge(cont, writer);
+
+        for (int i = 0; i < wait_message; ++i) {
+            cont.try_put(tbb::flow::continue_msg{});
+        }
+
+        cont.try_put_and_wait(tbb::flow::continue_msg{});
+
+        std::size_t check_index = 0;
+
+        // All of the tasks for start_work_items and wait_message would be spawned and hence processed by the thread in LIFO order.
+        // The first processed item is expected to be wait_message since it was spawned last
+        CHECK_MESSAGE(processed_items[check_index++] == wait_message, "Unexpected items processing");
+
+        g.wait_for_all();
+
+        // Tasks would be processed in LIFO order. Hence it is expected that new_work_items would be processed first in reverse order
+        // After them, start_work_items would be processed also in reverse order
+        for (std::size_t i = new_work_items.size(); i != 0; --i) {
+            CHECK_MESSAGE(processed_items[check_index++] == new_work_items[i - 1], "Unexpected items processing");
+        }
+        for (std::size_t i = start_work_items.size(); i != 0; --i) {
+            CHECK_MESSAGE(processed_items[check_index++] == start_work_items[i - 1], "Unexpected items processing");
+        }
+    });
+}
+
+void test_try_put_and_wait_lightweight() {
+    tbb::task_arena arena(1);
+
+    arena.execute([&]{
+        tbb::flow::graph g;
+
+        std::vector<int> start_work_items;
+        std::vector<int> processed_items;
+        std::vector<int> new_work_items;
+
+        int wait_message = 10;
+
+        for (int i = 0; i < wait_message; ++i) {
+            start_work_items.emplace_back(i);
+            if (i != 0) {
+                new_work_items.emplace_back(i + 10);
+            }
+        }
+
+        tbb::flow::continue_node<int, tbb::flow::lightweight>* start_node = nullptr;
+
+        tbb::flow::continue_node<int, tbb::flow::lightweight> cont(g,
+            [&](tbb::flow::continue_msg) noexcept {
+                static int counter = 0;
+                int i = counter++;
+                if (i == wait_message) {
+                    for (int item : new_work_items) {
+                        (void)item;
+                        start_node->try_put(tbb::flow::continue_msg{});
+                    }
+                }
+                return i;
+            });
+
+        start_node = &cont;
+
+        tbb::flow::function_node<int, int, tbb::flow::lightweight> writer(g, tbb::flow::unlimited,
+            [&](int input) noexcept {
+                processed_items.emplace_back(input);
+                return 0;
+            });
+
+        tbb::flow::make_edge(cont, writer);
+
+        for (int i = 0; i < wait_message; ++i) {
+            cont.try_put(tbb::flow::continue_msg{});
+        }
+
+        cont.try_put_and_wait(tbb::flow::continue_msg{});
+
+        std::size_t check_index = 0;
+
+        // For lightweight continue_node, start_work_items are expected to be processed first
+        // while putting items into the first node.
+        for (auto item : start_work_items) {
+            CHECK_MESSAGE(processed_items[check_index++] == item, "Unexpected items processing");
+        }
+
+        // If the node is unlimited, it should process new_work_items immediately while processing the wait_message
+        // Hence they should be processed before exiting the try_put_and_wait
+        for (auto item : new_work_items) {
+            CHECK_MESSAGE(processed_items[check_index++] == item, "Unexpected items processing");
+        }
+        // wait_message would be processed only after new_work_items
+        CHECK_MESSAGE(processed_items[check_index++] == wait_message, "Unexpected items processing");
+
+        g.wait_for_all();
+    });
+}
+
+void test_try_put_and_wait() {
+    test_try_put_and_wait_default();
+    test_try_put_and_wait_lightweight();
+}
+#endif // __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+
 //! Test concurrent continue_node for correctness
 //! \brief \ref error_guessing
 TEST_CASE("Concurrency testing") {
@@ -418,3 +564,10 @@ TEST_CASE("constraints for continue_node body") {
     static_assert(!can_call_continue_node_ctor<output_type, WrongReturnOperatorRoundBrackets<output_type>>);
 }
 #endif // __TBB_CPP20_CONCEPTS_PRESENT
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+//! \brief \ref error_guessing
+TEST_CASE("test continue_node try_put_and_wait") {
+    test_try_put_and_wait();
+}
+#endif
