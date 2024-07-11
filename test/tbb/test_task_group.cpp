@@ -780,8 +780,11 @@ TEST_CASE("Thread safety test for the task group") {
 TEST_CASE("Fibonacci test for the task group") {
     for (unsigned p=MinThread; p <= MaxThread; ++p) {
         tbb::global_control limit(tbb::global_control::max_allowed_parallelism, p);
+        tbb::task_arena a(p);
         g_MaxConcurrency = p;
-        RunFibonacciTests<tbb::task_group>();
+        a.execute([] {
+            RunFibonacciTests<tbb::task_group>();
+        });
     }
 }
 
