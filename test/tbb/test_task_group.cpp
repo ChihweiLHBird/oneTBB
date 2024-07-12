@@ -841,7 +841,10 @@ TEST_CASE("Thread safety test for the isolated task group") {
         }
         tbb::global_control limit(tbb::global_control::max_allowed_parallelism, p);
         g_MaxConcurrency = p;
-        TestThreadSafety<tbb::isolated_task_group>();
+        tbb::task_arena a(p);
+        a.execute([] {
+            TestThreadSafety<tbb::isolated_task_group>();
+        });
     }
 }
 #endif
