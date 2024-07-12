@@ -76,6 +76,7 @@ void test_functional_nodes_rf_reset_protocol(){
 
     f.try_put(0);
     f.try_put(0);
+
     CHECK_MESSAGE((counting_body.execute_count == 0), "Body should not be executed");
     g.reset(oneapi::tbb::flow::rf_reset_protocol);
 
@@ -158,6 +159,8 @@ void test_join_node_rf_reset_protocol(){
     CHECK_MESSAGE((!testing_node.try_get(tmp)), "All buffers must be emptied");
 }
 
+// Disabled when testing with TCM since global_control functionality is not yet covered by TCM
+#if !__TBB_TCM_TESTING_ENABLED
 //! Graph reset
 //! \brief \ref requirement
 TEST_CASE("graph reset with rf_reset_protocol") {
@@ -179,6 +182,7 @@ TEST_CASE("graph reset with rf_reset_protocol") {
     test_limiter_node_rf_reset_protocol();
     test_join_node_rf_reset_protocol();
 }
+#endif
 
 //! Graph reset rf_clear_edges
 //! \brief \ref requirement
